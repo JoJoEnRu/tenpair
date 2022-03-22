@@ -50,3 +50,7 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+/tenpair/x64/Debug
+/tenpair/Debug
+/.vs/tenpair/v17/ipch/AutoPCH
+/.vs/tenpair/v17
