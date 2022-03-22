@@ -5,14 +5,11 @@
 #include <stdio.h>
 #include <TCHAR.H>
 #include <windows.h>
-#include <conio.h>
-
 
 #define stats_padding 20
 #define console_max_x 60
 #define console_max_y 35
 #define WHITE FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED
-
 
 struct fieldData_s {
 	int** field;
