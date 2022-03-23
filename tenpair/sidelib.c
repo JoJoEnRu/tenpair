@@ -508,6 +508,7 @@ void undo() {
 		game_field->count_rows = actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_rows;
 		free(actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->field);
 		free(actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field);
+		last_cursor_position.Y = game_field->count_rows-1;
 		draw_table_beutifull();
 		check_available_moves();
 		always_hint_mode ? draw_available_moves_beutifull() : 0;
