@@ -6,10 +6,12 @@
 #include <TCHAR.H>
 #include <windows.h>
 
-#define stats_padding 20
-#define console_max_x 60
+#define stats_padding 10
+#define console_max_x 30
 #define console_max_y 35
 #define WHITE FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED
+
+bool always_hint_mode = 0;
 
 struct fieldData_s {
 	int** field;
@@ -33,29 +35,27 @@ struct moves_s {
 	complete_move* arr;
 };
 
-HANDLE cin = NULL;
-HANDLE cout = NULL;
+static HANDLE cin = NULL;
+static HANDLE cout = NULL;
 
-fieldData* game_field = NULL;
+static fieldData* game_field = NULL;
 
-COORD last_cursor_position = {0, 0};
+static COORD last_cursor_position = {0, 0};
 
-moves* moves_arr = NULL;
+static moves* moves_arr = NULL;
 
 static bool check_avaiable_cell(move);
 static bool check_avaiable_move(complete_move*);
-static void add_availible_move(moves*, int*, struct complete_moves_s);
-static void keyboard_handler(KEY_EVENT_RECORD);
-static void mouse_handler(MOUSE_EVENT_RECORD);
-static void move_all_rows_up(ui start_row);
 static bool compare_complete_move(complete_move*, complete_move*);
 static bool compare_move(move, move);
-static void redraw_stats();
+static void add_availible_move(moves*, int*, struct complete_moves_s);
 
-//static int first_row[10]  = { 1,2,3,4,5,6,7,8,9 };
-static int first_row[10] = { 1,1,1,1,1,1,1,1,9 };
-static int second_row[10] = { 1,1,1,2,1,3,1,4,1 };
-static int third_row[10]  = { 5,1,6,1,7,1,8,1,9 };
+static void keyboard_handler(KEY_EVENT_RECORD);
+static void mouse_handler(MOUSE_EVENT_RECORD);
+
+static void move_all_rows_up(ui start_row);
+static void make_all_field_white();
+static void redraw_stats();
 
 static void is_exist_field() {
 	if (game_field == NULL)
@@ -73,6 +73,11 @@ static void is_inited_console() {
 	if (cout == NULL)
 		exit(2);
 }
+
+static int first_row[10]  = { 1,2,3,4,5,6,7,8,9 };
+//static int first_row[10] = { 1,1,1,1,1,1,1,1,9 };
+static int second_row[10] = { 1,1,1,2,1,3,1,4,1 };
+static int third_row[10]  = { 5,1,6,1,7,1,8,1,9 };
 
 void init_table() {
 	game_field = malloc(sizeof(fieldData));
@@ -132,6 +137,7 @@ void draw_table_beutifull() {
 		}
 
 	}
+	always_hint_mode ? draw_available_moves_beutifull() : 0;
 	//Draw current stats
 	point.Y = 0;
 	point.X = console_max_x - stats_padding;
@@ -181,23 +187,6 @@ void draw_table_beutifull() {
 	SetConsoleCursorPosition(cout, last_cursor_position);
 }
 
-static void redraw_stats(){
-	COORD console_size = GetLargestConsoleWindowSize(cout);
-	WCHAR buf[30];
-	COORD point;
-	DWORD l;
-
-	_stprintf(buf, TEXT("%s %d"), "Remain: ", game_field->count_of_ocuppied_cells);
-	point.Y = 0;
-	point.X = console_max_x - stats_padding;
-	WriteConsoleOutputCharacter(cout, buf, strlen(buf), point, &l);
-
-
-	_stprintf(buf, TEXT("%s %d"), "Move: ", game_field->count_of_moves);
-	point.Y = 1;
-	WriteConsoleOutputCharacter(cout, buf, strlen(buf), point, &l);
-}
-
 void draw_available_moves_beutifull() {
 	is_exist_field();
 	is_inited_console();
@@ -206,6 +195,7 @@ void draw_available_moves_beutifull() {
 	COORD point;
 	point.X = 0;
 	point.Y = 0;
+	make_all_field_white();
 	for	(ui cursor = 0; cursor < moves_arr->cnt; cursor++){
 		point.Y = moves_arr->arr[cursor].fst.row;
 		point.X = moves_arr->arr[cursor].fst.column *2;
@@ -216,12 +206,6 @@ void draw_available_moves_beutifull() {
 	}
 }
 
-/*
-* D - 100|68 (deal)
-* S - 115|83 (undo)
-* A - 97 |66  (hint)
-* W - 119|87(Compact)
-*/
 void game_process_beutifull() {
 	is_exist_field();
 	is_exist_moves();
@@ -258,112 +242,6 @@ void game_process_beutifull() {
 			}
 		}
 	}
-}
-
-ui count_of_pressed_cells = 0;
-move cells_clicked[2];
-
-static void mouse_handler(MOUSE_EVENT_RECORD mr) {
-	DWORD l;
-	switch (mr.dwEventFlags) {
-	case 0:
-		if (mr.dwButtonState == FROM_LEFT_1ST_BUTTON_PRESSED)
-		{
-			if (mr.dwMousePosition.X % 2 != 0 ||
-				mr.dwMousePosition.Y >= game_field->count_rows ||
-				mr.dwMousePosition.X/2 > IN_ROW ||
-				game_field->field[mr.dwMousePosition.Y][mr.dwMousePosition.X/2] == 0)
-				break;
-			FillConsoleOutputAttribute(cout, 3, 1, mr.dwMousePosition, &l);
-			cells_clicked[count_of_pressed_cells].row = mr.dwMousePosition.Y;
-			cells_clicked[count_of_pressed_cells++].column = mr.dwMousePosition.X/2;
-			for(size_t i = 0; i < 10000; i++){
-				int a = 0;
-			}
-			if (count_of_pressed_cells == 2) {
-				if (make_turn(to_move(cells_clicked[0].row, cells_clicked[0].column, cells_clicked[1].row, cells_clicked[1].column))) {
-					game_field->count_of_moves+=2;
-					redraw_stats();
-					last_cursor_position.X =  mr.dwMousePosition.X;
-					last_cursor_position.Y =  mr.dwMousePosition.Y;
-					COORD to_fill_zero1 = { cells_clicked[0].column*2, cells_clicked[0].row};
-					FillConsoleOutputCharacter(cout, 32, 1, to_fill_zero1, &l);
-					COORD to_fill_zero2 = { cells_clicked[1].column*2, cells_clicked[1].row };
-					FillConsoleOutputCharacter(cout, 32, 1, to_fill_zero2, &l);
-				}
-				count_of_pressed_cells = 0;
-				COORD to_fill_zero1 = { cells_clicked[0].column*2, cells_clicked[0].row};
-				FillConsoleOutputAttribute(cout, WHITE, 1, to_fill_zero1, &l);
-				COORD to_fill_zero2 = { cells_clicked[1].column*2, cells_clicked[1].row };
-				FillConsoleOutputAttribute(cout, WHITE, 1, to_fill_zero2, &l);
-				check_available_moves();
-			}
-		}
-		break;
-	default:
-		break;
-	}
-}
-
-static void keyboard_handler(KEY_EVENT_RECORD mr) {
-	int key_pressed;
-	key_pressed = mr.uChar.AsciiChar;
-	switch (key_pressed) {
-	case(68):
-	case (100):
-		deal();
-		draw_table_beutifull();
-		break;
-	case(83):
-	case (115):
-		break;
-	case(66):
-	case (97):
-		draw_available_moves_beutifull();
-		break;
-	case(119):
-	case(87):
-		compact();
-		draw_table_beutifull();
-	default:
-		break;
-	}
-}
-
-void draw_table() {
-	is_exist_field();
-	for (ui row = 0; row < game_field->count_rows; row++)
-	{
-		for (ui column = 0; column < IN_ROW; column++)
-		{
-			if (game_field->field[row][column] == 0) {
-				printf("  ");
-				continue;
-			}
-			printf("%d ", game_field->field[row][column]);
-		}
-		printf("\n");
-	}
-	printf("\n");
-}
-
-void draw_available_moves() {
-	is_exist_field();
-	is_exist_moves();
-	for (ui row = 0; row < game_field->count_rows; row++)
-	{
-		for (ui column = 0; column < IN_ROW; column++)
-		{
-			move mv = { row,column };
-			if (check_avaiable_cell(mv)) {
-				printf("%d ", game_field->field[row][column]);
-				continue;
-			}
-			printf("  ");
-		}
-		printf("\n");
-	}
-	printf("\n");
 }
 
 void write_available_moves() {
@@ -445,14 +323,11 @@ moves* check_available_moves() {
 bool make_turn(complete_move* player_move) {
 	is_exist_field();
 	is_exist_moves();
-	//fprintf(stderr, "\n\n\n\n");
-	//printf("[%u]\n", player_move->fst.row);
-	//write_available_moves();
-	//printf("\n [%u]:%u %u:%u", player_move->fst.row, player_move->fst.column, player_move->snd.row, player_move->snd.column);
 	if (check_avaiable_move(player_move)) {
 		game_field->field[player_move->fst.row][player_move->fst.column] = 0;
 		game_field->field[player_move->snd.row][player_move->snd.column] = 0;
 		game_field->count_of_ocuppied_cells -= 2;
+		make_all_field_white();
 		check_available_moves();
 		return 1;
 	}
@@ -473,6 +348,7 @@ complete_move* to_move(ui row1, ui column1, ui row2, ui column2) {
 
 void compact(){
 	is_exist_field();
+	bool isCompacted = 0;
 	for (ui row = 0; row < game_field->count_rows; row++)
 	{
 		bool zero_flag = 1;
@@ -484,8 +360,13 @@ void compact(){
 			}
 		}
 		if (zero_flag) {
+			isCompacted = 1;
 			move_all_rows_up(row);
+			row--;
 		}
+	}
+	if (isCompacted) {
+		draw_table_beutifull();
 	}
 }
 
@@ -503,13 +384,15 @@ void deal() {
 		}
 	}
 	
-
 	ui cursor;
+	
 	for (cursor = game_field->count_rows * IN_ROW-1; cursor >= 0; cursor--)
 	{
 		if (game_field->field[cursor / IN_ROW][cursor % IN_ROW])
 			break;
 	}
+	last_cursor_position.Y = (cursor) / (IN_ROW);
+	last_cursor_position.X = (cursor % IN_ROW)*2;
 	cursor++;
 	ui great_count_rows = game_field->count_rows;
 	ui currentNumbers_cursor = 0;
@@ -524,23 +407,116 @@ void deal() {
 			game_field->field[cursor / IN_ROW][cursor % IN_ROW] = currentNumbers[currentNumbers_cursor++];
 	}
 
-	/*int new_rows = i_ceil_div(numbers_to_deal, IN_ROW);
-	currentField->field = realloc(currentField->field, sizeof(int*) * (new_rows + currentField->count_rows));
-
-	for (size_t i = currentField->count_rows; i < (new_rows + currentField->count_rows); i++)
-	{
-		currentField->field[i] = calloc(IN_ROW, sizeof(int));
-	}
-
-	int currentCursor = currentField->count_rows * IN_ROW;
-
-	for (size_t cursor = currentField->count_rows*IN_ROW; cursor < numbers_to_deal + currentCursor; cursor++)
-	{
-		currentField->field[cursor / IN_ROW][cursor % IN_ROW] = currentNumbers[cursor - currentCursor];
-	}*/
-
 	game_field->count_of_ocuppied_cells += numbers_to_deal;
-	//currentField->count_rows = currentField->count_rows + i_ceil_div(numbers_to_deal, IN_ROW);
+	draw_table_beutifull();
+}
+
+static ui count_of_pressed_cells = 0;
+static move cells_clicked[2];
+
+static void mouse_handler(MOUSE_EVENT_RECORD mr) {
+	DWORD l;
+	switch (mr.dwEventFlags) {
+	case 0:
+		if (mr.dwButtonState == FROM_LEFT_1ST_BUTTON_PRESSED)
+		{
+			if (mr.dwMousePosition.X % 2 != 0 ||
+				mr.dwMousePosition.Y >= game_field->count_rows ||
+				mr.dwMousePosition.X / 2 > IN_ROW ||
+				game_field->field[mr.dwMousePosition.Y][mr.dwMousePosition.X / 2] == 0)
+				break;
+			FillConsoleOutputAttribute(cout, 3, 1, mr.dwMousePosition, &l);
+			cells_clicked[count_of_pressed_cells].row = mr.dwMousePosition.Y;
+			cells_clicked[count_of_pressed_cells++].column = mr.dwMousePosition.X / 2;
+			if (count_of_pressed_cells == 2) {
+				if (make_turn(to_move(cells_clicked[0].row, cells_clicked[0].column, cells_clicked[1].row, cells_clicked[1].column))) {
+					game_field->count_of_moves += 2;
+					redraw_stats();
+					//last_cursor_position.X =  mr.dwMousePosition.X;
+					//last_cursor_position.Y =  mr.dwMousePosition.Y;
+					COORD to_fill_zero1 = { cells_clicked[0].column * 2, cells_clicked[0].row };
+					FillConsoleOutputCharacter(cout, 32, 1, to_fill_zero1, &l);
+					COORD to_fill_zero2 = { cells_clicked[1].column * 2, cells_clicked[1].row };
+					FillConsoleOutputCharacter(cout, 32, 1, to_fill_zero2, &l);
+				}
+				count_of_pressed_cells = 0;
+				COORD to_fill_zero1 = { cells_clicked[0].column * 2, cells_clicked[0].row };
+				FillConsoleOutputAttribute(cout, WHITE, 1, to_fill_zero1, &l);
+				COORD to_fill_zero2 = { cells_clicked[1].column * 2, cells_clicked[1].row };
+				FillConsoleOutputAttribute(cout, WHITE, 1, to_fill_zero2, &l);
+				check_available_moves();
+				always_hint_mode ? draw_available_moves_beutifull() : 0;
+			}
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+* D - 100|68 (deal)
+* S - 115|83 (undo)
+* A - 97 |66  (hint)
+* W - 119|87(Compact)
+* Z - 122|90 (Always show hints (TOGGLE))
+*/
+static void keyboard_handler(KEY_EVENT_RECORD mr) {
+	int key_pressed;
+	key_pressed = mr.uChar.AsciiChar;
+	switch (key_pressed) {
+	case(68):
+	case (100):
+		deal();
+		break;
+	case(83):
+	case (115):
+		break;
+	case(66):
+	case (97):
+		draw_available_moves_beutifull();
+		break;
+	case(119):
+	case(87):
+		compact();
+		break;
+	case(90):
+	case(122):
+		always_hint_mode = !always_hint_mode;
+		always_hint_mode ? draw_available_moves_beutifull() : 0;
+		break;
+	default:
+		break;
+	}
+}
+
+static void redraw_stats() {
+	COORD console_size = GetLargestConsoleWindowSize(cout);
+	WCHAR buf[30];
+	COORD point;
+	DWORD l;
+
+	_stprintf(buf, TEXT("%s %d"), "Remain: ", game_field->count_of_ocuppied_cells);
+	point.Y = 0;
+	point.X = console_max_x - stats_padding;
+	WriteConsoleOutputCharacter(cout, buf, strlen(buf), point, &l);
+
+
+	_stprintf(buf, TEXT("%s %d"), "Move: ", game_field->count_of_moves);
+	point.Y = 1;
+	WriteConsoleOutputCharacter(cout, buf, strlen(buf), point, &l);
+}
+
+static void make_all_field_white() {
+	DWORD l;
+	COORD point;
+	point.X = 0;
+	point.Y = 0;
+	for (size_t i = 0; i < game_field->count_rows; i++)
+	{
+		point.Y = i;
+		FillConsoleOutputAttribute(cout, WHITE, IN_ROW * 2, point, &l);
+	}
 }
 
 static void move_all_rows_up(ui start_row) {
