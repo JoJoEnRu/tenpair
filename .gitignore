@@ -54,3 +54,7 @@ dkms.conf
 /tenpair/Debug
 /.vs/tenpair/v17/ipch/AutoPCH
 /.vs/tenpair/v17
+/tenpair/x64/Release/tenpair.tlog
+/tenpair/x64/Release
+/tenpair/Release/tenpair.tlog
+/tenpair/Release

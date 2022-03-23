@@ -16,11 +16,11 @@ void draw_available_moves_beutifull();
 void game_process_beutifull();
 
 void init_table();
-void draw_table();
-void draw_available_moves();
 void write_available_moves();
 void compact();
 void deal();
+void undo();
+
 bool make_turn(complete_move* move);
 complete_move* to_move(ui row1, ui column1, ui row2, ui column2);
 moves* check_available_moves();
