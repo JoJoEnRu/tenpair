@@ -20,27 +20,7 @@
 
 bool always_hint_mode = 0;
 
-struct fieldData_s {
-	int** field;
-	ui count_rows;
-	ui count_of_ocuppied_cells;
-	ui count_of_moves;
-};
 
-struct move_s {
-	ui row;
-	ui column;
-};
-
-struct complete_moves_s {
-	move fst;
-	move snd;
-};
-
-struct moves_s {
-	int cnt;
-	complete_move* arr;
-};
 
 typedef struct action_move_s {
 	ui fst_val;
@@ -75,15 +55,13 @@ static HANDLE cout = NULL;
 
 ac_list actions_history;
 
-static fieldData* game_field = NULL;
-
 static COORD last_cursor_position = {0, 0};
 
 static moves* moves_arr = NULL;
 
-static char text_buf[100];
+static SMALL_RECT stats_pos;
 
-static SMALL_RECT stats_position;
+static char text_buf[100];
 
 //undo functions
 static void add_new_action(BYTE, action_move*);
@@ -147,7 +125,7 @@ void init_table() {
 	actions_history.act = malloc(sizeof(action) * actions_history.capacity);
 }
 
-void init_console_beutifull() {
+void init_console() {
 	cout = GetStdHandle(STD_OUTPUT_HANDLE);
 	cin = GetStdHandle(STD_INPUT_HANDLE);
 	char title[] = "TenPair";
@@ -162,9 +140,14 @@ void init_console_beutifull() {
 
 	DWORD fdwMode = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
 	SetConsoleMode(cin, fdwMode);
+	
 }
 
-void draw_table_beutifull() {
+void draw_table() {
+	stats_pos.Left = console_max_x - stats_padding;
+	stats_pos.Right = console_max_x;
+	stats_pos.Top = 0;
+	stats_pos.Bottom = 35;
 	is_exist_field();
 	is_inited_console();
 	DWORD l;
@@ -193,12 +176,7 @@ void draw_table_beutifull() {
 
 	}
 
-	stats_position.Top = 0;
-	stats_position.Bottom = 5;
-	stats_position.Left = console_max_x - stats_padding;
-	stats_position.Right = console_max_x;
-
-	always_hint_mode ? draw_available_moves_beutifull() : 0;
+	always_hint_mode ? mark_available_moves() : 0;
 	//Draw current stats
 	point.Y = 0;
 	point.X = console_max_x - stats_padding;
@@ -247,7 +225,7 @@ void draw_table_beutifull() {
 	//SetConsoleCursorPosition(cout, last_cursor_position);
 }
 
-void draw_available_moves_beutifull() {
+void mark_available_moves() {
 	is_exist_field();
 	is_inited_console();
 	check_available_moves();
@@ -266,7 +244,7 @@ void draw_available_moves_beutifull() {
 	}
 }
 
-void game_process_beutifull() {
+void game_process() {
 	is_exist_field();
 	is_exist_moves();
 	is_inited_console();
@@ -406,7 +384,7 @@ complete_move to_move(ui row1, ui column1, ui row2, ui column2) {
 	return cmv;
 }
 
-void compact(){
+void compact(bool mode){
 	is_exist_field();
 	bool isCompacted = 0;
 	for (ui row = 0; row < game_field->count_rows; row++)
@@ -420,20 +398,20 @@ void compact(){
 			}
 		}
 		if (zero_flag) {
-			isCompacted?0:add_new_action(ACTION_COMPACT, NULL);
+			mode?isCompacted?0:add_new_action(ACTION_COMPACT, NULL):0;
 			isCompacted = 1;
 			move_all_rows_up(row);
 			row--;
 		}
 	}
 	if (isCompacted) {
-		draw_table_beutifull();
+		mode?draw_table():0;
 	}
 }
 
-void deal() {
+void deal(bool mode) {
 	is_exist_field();
-	add_new_action(ACTION_DEAL, NULL);
+	mode?add_new_action(ACTION_DEAL, NULL):0;
 	int* currentNumbers = (int*)malloc(sizeof(int) * game_field->count_of_ocuppied_cells);
 	ui numbers_to_deal = 0;
 	for (size_t row = 0; row < game_field->count_rows; row++)
@@ -470,10 +448,10 @@ void deal() {
 	}
 	free(currentNumbers);
 	game_field->count_of_ocuppied_cells += numbers_to_deal;
-	draw_table_beutifull();
+	mode?draw_table():0;
 }
 
-void undo() {
+void undo(bool mode) {
 	if(actions_history.cnt == 0)
 		return;
 
@@ -482,7 +460,7 @@ void undo() {
 	case(ACTION_MOVE):
 		game_field->count_of_moves -= 2;
 		game_field->count_of_ocuppied_cells += 2;
-		redraw_stats();
+		mode?redraw_stats():0;
 
 		DWORD l;
 
@@ -498,10 +476,7 @@ void undo() {
 		FillConsoleOutputCharacter(cout, sym, 1, to_fill_zero2, &l);
 		game_field->field[mv.row][mv.column] = sym - 48;
 
-		check_available_moves();
-		make_all_field_white();
-		always_hint_mode ? draw_available_moves_beutifull() : 0;
-
+		mode?make_all_field_white():0;
 		free(actions_history.act[actions_history.cnt].ac_move);
 		break;
 	case(ACTION_DEAL):
@@ -512,7 +487,6 @@ void undo() {
 			free(game_field->field[i]);
 		}
 		free(game_field->field);
-		stats_position = actions_history.act[actions_history.cnt].ac_deal_com.stats_pos;
 		game_field->field = (int**)malloc(sizeof(int*)* actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows);
 		for (size_t row = 0; row < actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows; row++)
 		{
@@ -526,14 +500,13 @@ void undo() {
 		free(actions_history.act[actions_history.cnt].ac_deal_com.game_field->field);
 		free(actions_history.act[actions_history.cnt].ac_deal_com.game_field);
 		last_cursor_position.Y = game_field->count_rows-1;
-		draw_table_beutifull();
-		check_available_moves();
-		always_hint_mode ? draw_available_moves_beutifull() : 0;
+		mode?draw_table():0;
 		break;
 	default:
 		break;
 	}
-
+	check_available_moves();
+	mode ? always_hint_mode ? mark_available_moves() : 0 : 0;
 	
 }
 
@@ -569,7 +542,7 @@ static void mouse_handler(MOUSE_EVENT_RECORD mr) {
 				COORD to_fill_zero2 = { cells_clicked[1].column * 2, cells_clicked[1].row };
 				FillConsoleOutputAttribute(cout, WHITE, 1, to_fill_zero2, &l);
 				check_available_moves();
-				always_hint_mode ? draw_available_moves_beutifull() : 0;
+				always_hint_mode ? mark_available_moves() : 0;
 			}
 		}
 		break;
@@ -577,11 +550,10 @@ static void mouse_handler(MOUSE_EVENT_RECORD mr) {
 		if (!(mr.dwControlKeyState & LEFT_CTRL_PRESSED)) {
 			if (GET_WHEEL_DELTA_WPARAM(mr.dwButtonState) < 0) { //Down scroll
 				scroll_window(SCROLL_DOWN);
-				scroll_stats(SCROLL_DOWN);
+
 			}
 			else { //up scroll
 				scroll_window(SCROLL_UP);
-				scroll_stats(SCROLL_UP);
 			}
 		}
 		
@@ -595,9 +567,25 @@ static void scroll_window(BYTE type) {
 
 	CONSOLE_SCREEN_BUFFER_INFO screen_buffer_info;
 	GetConsoleScreenBufferInfo(cout, &screen_buffer_info);
+	CHAR_INFO fill_path;
+	COORD coordDest;
 	SMALL_RECT buffer_position;
+	SMALL_RECT stats_position;
+
+	fill_path.Attributes = WHITE;
+	fill_path.Char.AsciiChar = (char)' ';
 
 	buffer_position = screen_buffer_info.srWindow;
+
+	
+
+	/*stats_position.Left = console_max_x - stats_padding;
+	stats_position.Right = console_max_x;
+	stats_position.Bottom = buffer_position.Bottom;
+	stats_position.Top = buffer_position.Top;*/
+
+	coordDest.Y = buffer_position.Top;
+	coordDest.X = stats_pos.Left;
 
 	switch (type) {
 
@@ -605,14 +593,22 @@ static void scroll_window(BYTE type) {
 		if (buffer_position.Bottom == screen_buffer_info.dwSize.Y) return;
 		buffer_position.Top++;
 		buffer_position.Bottom++;
+		coordDest.Y = buffer_position.Top;
+
 		break;
 	case(SCROLL_UP):
-		if (buffer_position.Top == 0) return;
-		buffer_position.Top--;
-		buffer_position.Bottom--;
+		if (buffer_position.Top != 0) {
+			buffer_position.Top--;
+			buffer_position.Bottom--;
+			coordDest.Y = buffer_position.Top;
+		}
+			
 		break;
 	}
+	ScrollConsoleScreenBuffer(cout, &stats_pos, NULL, coordDest, &fill_path);
 	SetConsoleWindowInfo(cout, TRUE, &buffer_position);
+	stats_pos.Bottom = coordDest.Y + 35;
+	stats_pos.Top = coordDest.Y;
 }
 
 static void scroll_stats(BYTE type) {
@@ -621,6 +617,13 @@ static void scroll_stats(BYTE type) {
 	GetConsoleScreenBufferInfo(cout, &screen_buffer_info);
 	CHAR_INFO fill_path;
 	COORD coordDest;
+
+	SMALL_RECT test = screen_buffer_info.srWindow;
+	SMALL_RECT stats_position;
+	stats_position.Bottom = test.Bottom;
+	stats_position.Top = test.Top;
+	stats_position.Left = console_max_x - stats_padding;
+	stats_position.Right = console_max_x;
 
 	fill_path.Attributes = WHITE;
 	fill_path.Char.AsciiChar = (char)' ';
@@ -639,8 +642,6 @@ static void scroll_stats(BYTE type) {
 			coordDest,
 			&fill_path
 		);
-		stats_position.Top++;
-		stats_position.Bottom++;
 		break;
 	case(SCROLL_UP)://Up
 		if (stats_position.Top == 0) return;
@@ -653,8 +654,6 @@ static void scroll_stats(BYTE type) {
 			coordDest,
 			&fill_path
 		);
-		stats_position.Top--;
-		stats_position.Bottom--;
 	}
 }
 
@@ -671,24 +670,24 @@ static void keyboard_handler(KEY_EVENT_RECORD mr) {
 	switch (key_pressed) {
 	case(68):
 	case (100):
-		deal();
+		deal(DRAW_MODE);
 		break;
 	case(83):
 	case (115):
-		undo();
+		undo(DRAW_MODE);
 		break;
 	case(66):
 	case (97):
-		draw_available_moves_beutifull();
+		mark_available_moves();
 		break;
 	case(119):
 	case(87):
-		compact();
+		compact(DRAW_MODE);
 		break;
 	case(90):
 	case(122):
 		always_hint_mode = !always_hint_mode;
-		always_hint_mode ? draw_available_moves_beutifull() : 0;
+		always_hint_mode ? mark_available_moves() : 0;
 		break;
 	default:
 		break;
@@ -709,7 +708,6 @@ static void add_new_action(BYTE type, action_move* mv) {
 	case(ACTION_COMPACT):
 		actions_history.act[actions_history.cnt].ac_deal_com.game_field = malloc(sizeof(fieldData));
 		ui field_bit_size = sizeof(int) * game_field->count_rows * IN_ROW;
-		actions_history.act[actions_history.cnt].ac_deal_com.stats_pos = stats_position;
 		actions_history.act[actions_history.cnt].ac_deal_com.game_field->field = (int**)malloc(sizeof(int*) * game_field->count_rows);
 		for (size_t row = 0; row < game_field->count_rows; row++)
 		{

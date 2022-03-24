@@ -141,9 +141,11 @@
   <ItemGroup>
     <ClCompile Include="main.c" />
     <ClCompile Include="sidelib.c" />
+    <ClCompile Include="solverbot.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="sidelib.h" />
+    <ClInclude Include="solverbot.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

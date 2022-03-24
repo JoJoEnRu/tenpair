@@ -21,9 +21,15 @@
     <ClCompile Include="sidelib.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="solverbot.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="sidelib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="solverbot.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
