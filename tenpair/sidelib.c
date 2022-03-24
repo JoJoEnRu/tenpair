@@ -57,6 +57,7 @@ typedef struct action_s {
 	action_move* ac_move;
 	struct action_deal_move {
 		fieldData* game_field;
+		SMALL_RECT stats_pos;
 	}ac_deal_com;
 
 }action;
@@ -89,8 +90,8 @@ static void add_new_action(BYTE, action_move*);
 
 //Moves function
 static bool check_avaiable_cell(move);
-static bool check_avaiable_move(complete_move*);
-static bool compare_complete_move(complete_move*, complete_move*);
+static bool check_avaiable_move(complete_move);
+static bool compare_complete_move(complete_move, complete_move);
 static bool compare_move(move, move);
 static void add_availible_move(moves*, int*, struct complete_moves_s);
 static void scroll_stats(BYTE);
@@ -161,10 +162,6 @@ void init_console_beutifull() {
 
 	DWORD fdwMode = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
 	SetConsoleMode(cin, fdwMode);
-	stats_position.Top = 0;
-	stats_position.Bottom = 5;
-	stats_position.Left = console_max_x - stats_padding;
-	stats_position.Right = console_max_x;
 }
 
 void draw_table_beutifull() {
@@ -195,6 +192,12 @@ void draw_table_beutifull() {
 		WriteConsole(cout, text_buf, 2, 0, NULL);
 
 	}
+
+	stats_position.Top = 0;
+	stats_position.Bottom = 5;
+	stats_position.Left = console_max_x - stats_padding;
+	stats_position.Right = console_max_x;
+
 	always_hint_mode ? draw_available_moves_beutifull() : 0;
 	//Draw current stats
 	point.Y = 0;
@@ -241,7 +244,7 @@ void draw_table_beutifull() {
 	point.X += 8;
 	WriteConsoleOutputAttribute(cout, &text_atribute, 1, point, &l);
 
-	SetConsoleCursorPosition(cout, last_cursor_position);
+	//SetConsoleCursorPosition(cout, last_cursor_position);
 }
 
 void draw_available_moves_beutifull() {
@@ -376,14 +379,14 @@ moves* check_available_moves() {
 * return 1 if move is complete
 * otherwise return 0
 */
-bool make_turn(complete_move* player_move) {
+bool make_turn(complete_move player_move) {
 	is_exist_field();
 	is_exist_moves();
 	if (check_avaiable_move(player_move)) {
-		action_move mv = { game_field->field[player_move->fst.row][player_move->fst.column], game_field->field[player_move->snd.row][player_move->snd.column], *player_move };
+		action_move mv = { game_field->field[player_move.fst.row][player_move.fst.column], game_field->field[player_move.snd.row][player_move.snd.column], player_move };
 		add_new_action(ACTION_MOVE, &mv);
-		game_field->field[player_move->fst.row][player_move->fst.column] = 0;
-		game_field->field[player_move->snd.row][player_move->snd.column] = 0;
+		game_field->field[player_move.fst.row][player_move.fst.column] = 0;
+		game_field->field[player_move.snd.row][player_move.snd.column] = 0;
 		game_field->count_of_ocuppied_cells -= 2;
 		game_field->count_of_moves += 2;
 		check_available_moves();
@@ -396,12 +399,11 @@ bool make_turn(complete_move* player_move) {
 * convert four numbers into full 2-placed move
 * (x1,y2) (x2,y2)
 */
-complete_move* to_move(ui row1, ui column1, ui row2, ui column2) {
+complete_move to_move(ui row1, ui column1, ui row2, ui column2) {
 	move mv1 = { row1, column1 };
 	move mv2 = { row2, column2 };
 	complete_move cmv = { mv1, mv2 };
-	complete_move* pcmv = &cmv;
-	return pcmv;
+	return cmv;
 }
 
 void compact(){
@@ -510,6 +512,7 @@ void undo() {
 			free(game_field->field[i]);
 		}
 		free(game_field->field);
+		stats_position = actions_history.act[actions_history.cnt].ac_deal_com.stats_pos;
 		game_field->field = (int**)malloc(sizeof(int*)* actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows);
 		for (size_t row = 0; row < actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows; row++)
 		{
@@ -571,13 +574,15 @@ static void mouse_handler(MOUSE_EVENT_RECORD mr) {
 		}
 		break;
 	case(MOUSE_WHEELED):
-		if (GET_WHEEL_DELTA_WPARAM(mr.dwButtonState) < 0) { //Down scroll
-			scroll_window(SCROLL_DOWN);
-			scroll_stats(SCROLL_DOWN);
-		}
-		else { //up scroll
-			scroll_window(SCROLL_UP);
-			scroll_stats(SCROLL_UP);
+		if (!(mr.dwControlKeyState & LEFT_CTRL_PRESSED)) {
+			if (GET_WHEEL_DELTA_WPARAM(mr.dwButtonState) < 0) { //Down scroll
+				scroll_window(SCROLL_DOWN);
+				scroll_stats(SCROLL_DOWN);
+			}
+			else { //up scroll
+				scroll_window(SCROLL_UP);
+				scroll_stats(SCROLL_UP);
+			}
 		}
 		
 		break;
@@ -704,7 +709,7 @@ static void add_new_action(BYTE type, action_move* mv) {
 	case(ACTION_COMPACT):
 		actions_history.act[actions_history.cnt].ac_deal_com.game_field = malloc(sizeof(fieldData));
 		ui field_bit_size = sizeof(int) * game_field->count_rows * IN_ROW;
-		
+		actions_history.act[actions_history.cnt].ac_deal_com.stats_pos = stats_position;
 		actions_history.act[actions_history.cnt].ac_deal_com.game_field->field = (int**)malloc(sizeof(int*) * game_field->count_rows);
 		for (size_t row = 0; row < game_field->count_rows; row++)
 		{
@@ -761,13 +766,13 @@ static void move_all_rows_up(ui start_row) {
 	game_field->count_rows--;
 }
 
-static bool check_avaiable_move(complete_move* player_move) {
+static bool check_avaiable_move(complete_move player_move) {
 	is_exist_field();
 	is_exist_moves();
 	//complete_move reverse_position = { player_move->snd, player_move->fst };
 	for (ui i = 0; i < moves_arr->cnt; i++)
 	{
-		if (compare_complete_move(player_move, &(moves_arr->arr[i])))
+		if (compare_complete_move(player_move, (moves_arr->arr[i])))
 		{
 			return 1;
 		}
@@ -775,9 +780,9 @@ static bool check_avaiable_move(complete_move* player_move) {
 	return 0;
 }
 
-static bool compare_complete_move(complete_move* mv1, complete_move* mv2) {
-	if ((compare_move(mv1->fst, mv2->fst) && compare_move(mv1->snd, mv2->snd)) ||
-		(compare_move(mv1->snd, mv2->fst) && compare_move(mv1->fst, mv2->snd))
+static bool compare_complete_move(complete_move mv1, complete_move mv2) {
+	if ((compare_move(mv1.fst, mv2.fst) && compare_move(mv1.snd, mv2.snd)) ||
+		(compare_move(mv1.snd, mv2.fst) && compare_move(mv1.fst, mv2.snd))
 		)
 		return 1;
 

@@ -22,5 +22,5 @@ void deal();
 void undo();
 
 bool make_turn(complete_move* move);
-complete_move* to_move(ui row1, ui column1, ui row2, ui column2);
+complete_move to_move(ui row1, ui column1, ui row2, ui column2);
 moves* check_available_moves();
