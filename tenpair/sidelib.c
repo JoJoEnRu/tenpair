@@ -10,6 +10,9 @@
 #define ACTION_DEAL	   2
 #define ACTION_COMPACT 3
 
+#define SCROLL_UP   2
+#define SCROLL_DOWN 1
+
 #define stats_padding 13
 #define console_max_x 35
 #define console_max_y 35
@@ -49,10 +52,10 @@ typedef struct action_s {
 	// 0x1 -> simple move
 	// 0x2 -> Deal
 	// 0x3 -> compact
-	BYTE action_type;
+	BYTE type;
 	
 	action_move* ac_move;
-	struct action_deal {
+	struct action_deal_move {
 		fieldData* game_field;
 	}ac_deal_com;
 
@@ -60,8 +63,8 @@ typedef struct action_s {
 
 typedef struct actions_history_s {
 
-	ui actions_cnt;
-	ui actions_capacity;
+	ui cnt;
+	ui capacity;
 	action* act;
 
 }ac_list;
@@ -77,6 +80,10 @@ static COORD last_cursor_position = {0, 0};
 
 static moves* moves_arr = NULL;
 
+static char text_buf[100];
+
+static SMALL_RECT stats_position;
+
 //undo functions
 static void add_new_action(BYTE, action_move*);
 
@@ -86,6 +93,8 @@ static bool check_avaiable_move(complete_move*);
 static bool compare_complete_move(complete_move*, complete_move*);
 static bool compare_move(move, move);
 static void add_availible_move(moves*, int*, struct complete_moves_s);
+static void scroll_stats(BYTE);
+static void scroll_window(BYTE);
 
 //handlers
 static void keyboard_handler(KEY_EVENT_RECORD);
@@ -132,9 +141,9 @@ void init_table() {
 	memcpy(game_field->field[1], second_row, sizeof(int) * IN_ROW);
 	memcpy(game_field->field[2], third_row,  sizeof(int) * IN_ROW);
 
-	actions_history.actions_cnt = 0;
-	actions_history.actions_capacity = 16;
-	actions_history.act = malloc(sizeof(action) * actions_history.actions_capacity);
+	actions_history.cnt = 0;
+	actions_history.capacity = 16;
+	actions_history.act = malloc(sizeof(action) * actions_history.capacity);
 }
 
 void init_console_beutifull() {
@@ -152,6 +161,10 @@ void init_console_beutifull() {
 
 	DWORD fdwMode = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
 	SetConsoleMode(cin, fdwMode);
+	stats_position.Top = 0;
+	stats_position.Bottom = 5;
+	stats_position.Left = console_max_x - stats_padding;
+	stats_position.Right = console_max_x;
 }
 
 void draw_table_beutifull() {
@@ -174,10 +187,12 @@ void draw_table_beutifull() {
 				WriteConsole(cout, &space, 1, 0, NULL);
 				continue;
 			}
-			char buf[2];
+			char buf[5];
 			_stprintf(buf, TEXT("%d "), game_field->field[row][column]);
 			WriteConsole(cout, buf, 2, 0, NULL);
 		}
+		sprintf(text_buf, "           ");
+		WriteConsole(cout, text_buf, 2, 0, NULL);
 
 	}
 	always_hint_mode ? draw_available_moves_beutifull() : 0;
@@ -185,45 +200,44 @@ void draw_table_beutifull() {
 	point.Y = 0;
 	point.X = console_max_x - stats_padding;
 	SetConsoleCursorPosition(cout, point);
-	char buf[30];
-	_stprintf(buf, TEXT("%s %d"), "Remain: ", game_field->count_of_ocuppied_cells);
-	WriteConsole(cout, buf, strlen(buf), 0, NULL);
+	sprintf(text_buf, "%s %d", "Remain: ", game_field->count_of_ocuppied_cells);
+	WriteConsole(cout, text_buf, strlen(text_buf), 0, NULL);
 
 	point.Y = 1;
 	SetConsoleCursorPosition(cout, point);
-	_stprintf(buf, TEXT("%s %d"), "Move: ", game_field->count_of_moves);
-	WriteConsole(cout, buf, strlen(buf), 0, NULL);
+	sprintf(text_buf, "%s %d", "Move: ", game_field->count_of_moves);
+	WriteConsole(cout, text_buf, strlen(text_buf), 0, NULL);
 
 	WORD text_atribute = COMMON_LVB_UNDERSCORE | WHITE | COMMON_LVB_LEADING_BYTE;
 
 	point.Y = 2;
 	SetConsoleCursorPosition(cout, point);
-	_stprintf(buf, TEXT("%s"), "Deal(D)");
-	WriteConsole(cout, buf, strlen(buf), 0, NULL);
+	sprintf(text_buf, "%s", "Deal(D)");
+	WriteConsole(cout, text_buf, strlen(text_buf), 0, NULL);
 	point.X += 5;
 	WriteConsoleOutputAttribute(cout, &text_atribute, 1, point, &l);
 
 	point.Y = 3;
-	_stprintf(buf, TEXT("%s"), "Hint(A)");
+	sprintf(text_buf, "%s", "Hint(A)");
 	point.X = console_max_x - stats_padding;
 	SetConsoleCursorPosition(cout, point);
-	WriteConsole(cout, buf, strlen(buf), 0, NULL);
+	WriteConsole(cout, text_buf, strlen(text_buf), 0, NULL);
 	point.X += 5;
 	WriteConsoleOutputAttribute(cout, &text_atribute, 1, point, &l);
 
 	point.Y = 4;
-	_stprintf(buf, TEXT("%s"), "Undo(S)");
+	sprintf(text_buf, "%s", "Undo(S)");
 	point.X = console_max_x - stats_padding;
 	SetConsoleCursorPosition(cout, point);
-	WriteConsole(cout, buf, strlen(buf), 0, NULL);
+	WriteConsole(cout, text_buf, strlen(text_buf), 0, NULL);
 	point.X += 5;
 	WriteConsoleOutputAttribute(cout, &text_atribute, 1, point, &l);
 
 	point.Y = 5;
-	_stprintf(buf, TEXT("%s"), "Compact(W)");
+	sprintf(text_buf, "%s", "Compact(W)");
 	point.X = console_max_x - stats_padding;
 	SetConsoleCursorPosition(cout, point);
-	WriteConsole(cout, buf, strlen(buf), 0, NULL);
+	WriteConsole(cout, text_buf, strlen(text_buf), 0, NULL);
 	point.X += 8;
 	WriteConsoleOutputAttribute(cout, &text_atribute, 1, point, &l);
 
@@ -458,11 +472,11 @@ void deal() {
 }
 
 void undo() {
-	if(actions_history.actions_cnt == 0)
+	if(actions_history.cnt == 0)
 		return;
 
-	actions_history.actions_cnt--;
-	switch (actions_history.act[actions_history.actions_cnt].action_type) {
+	actions_history.cnt--;
+	switch (actions_history.act[actions_history.cnt].type) {
 	case(ACTION_MOVE):
 		game_field->count_of_moves -= 2;
 		game_field->count_of_ocuppied_cells += 2;
@@ -470,14 +484,14 @@ void undo() {
 
 		DWORD l;
 
-		int sym = actions_history.act[actions_history.actions_cnt].ac_move->fst_val + 48;
-		move mv = actions_history.act[actions_history.actions_cnt].ac_move->mv.fst;
+		int sym = actions_history.act[actions_history.cnt].ac_move->fst_val + 48;
+		move mv = actions_history.act[actions_history.cnt].ac_move->mv.fst;
 		COORD to_fill_zero1 = { mv.column * 2, mv.row };
 		FillConsoleOutputCharacter(cout, sym, 1, to_fill_zero1, &l);
 		game_field->field[mv.row][mv.column] = sym - 48;
 
-		sym = actions_history.act[actions_history.actions_cnt].ac_move->snd_val + 48;
-		mv = actions_history.act[actions_history.actions_cnt].ac_move->mv.snd;
+		sym = actions_history.act[actions_history.cnt].ac_move->snd_val + 48;
+		mv = actions_history.act[actions_history.cnt].ac_move->mv.snd;
 		COORD to_fill_zero2 = { mv.column * 2, mv.row };
 		FillConsoleOutputCharacter(cout, sym, 1, to_fill_zero2, &l);
 		game_field->field[mv.row][mv.column] = sym - 48;
@@ -486,7 +500,7 @@ void undo() {
 		make_all_field_white();
 		always_hint_mode ? draw_available_moves_beutifull() : 0;
 
-		free(actions_history.act[actions_history.actions_cnt].ac_move);
+		free(actions_history.act[actions_history.cnt].ac_move);
 		break;
 	case(ACTION_DEAL):
 	case(ACTION_COMPACT):
@@ -496,18 +510,18 @@ void undo() {
 			free(game_field->field[i]);
 		}
 		free(game_field->field);
-		game_field->field = (int**)malloc(sizeof(int*)* actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_rows);
-		for (size_t row = 0; row < actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_rows; row++)
+		game_field->field = (int**)malloc(sizeof(int*)* actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows);
+		for (size_t row = 0; row < actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows; row++)
 		{
 			game_field->field[row] = (int*)malloc(sizeof(int) * IN_ROW);
-			memcpy(game_field->field[row], actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->field[row], IN_ROW * sizeof(int));
-			free(actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->field[row]);
+			memcpy(game_field->field[row], actions_history.act[actions_history.cnt].ac_deal_com.game_field->field[row], IN_ROW * sizeof(int));
+			free(actions_history.act[actions_history.cnt].ac_deal_com.game_field->field[row]);
 		}
-		game_field->count_of_moves = actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_of_moves;
-		game_field->count_of_ocuppied_cells = actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_of_ocuppied_cells;
-		game_field->count_rows = actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_rows;
-		free(actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->field);
-		free(actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field);
+		game_field->count_of_moves = actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_of_moves;
+		game_field->count_of_ocuppied_cells = actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_of_ocuppied_cells;
+		game_field->count_rows = actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows;
+		free(actions_history.act[actions_history.cnt].ac_deal_com.game_field->field);
+		free(actions_history.act[actions_history.cnt].ac_deal_com.game_field);
 		last_cursor_position.Y = game_field->count_rows-1;
 		draw_table_beutifull();
 		check_available_moves();
@@ -556,8 +570,86 @@ static void mouse_handler(MOUSE_EVENT_RECORD mr) {
 			}
 		}
 		break;
+	case(MOUSE_WHEELED):
+		if (GET_WHEEL_DELTA_WPARAM(mr.dwButtonState) < 0) { //Down scroll
+			scroll_window(SCROLL_DOWN);
+			scroll_stats(SCROLL_DOWN);
+		}
+		else { //up scroll
+			scroll_window(SCROLL_UP);
+			scroll_stats(SCROLL_UP);
+		}
+		
+		break;
 	default:
 		break;
+	}
+}
+
+static void scroll_window(BYTE type) {
+
+	CONSOLE_SCREEN_BUFFER_INFO screen_buffer_info;
+	GetConsoleScreenBufferInfo(cout, &screen_buffer_info);
+	SMALL_RECT buffer_position;
+
+	buffer_position = screen_buffer_info.srWindow;
+
+	switch (type) {
+
+	case(SCROLL_DOWN):
+		if (buffer_position.Bottom == screen_buffer_info.dwSize.Y) return;
+		buffer_position.Top++;
+		buffer_position.Bottom++;
+		break;
+	case(SCROLL_UP):
+		if (buffer_position.Top == 0) return;
+		buffer_position.Top--;
+		buffer_position.Bottom--;
+		break;
+	}
+	SetConsoleWindowInfo(cout, TRUE, &buffer_position);
+}
+
+static void scroll_stats(BYTE type) {
+
+	CONSOLE_SCREEN_BUFFER_INFO screen_buffer_info;
+	GetConsoleScreenBufferInfo(cout, &screen_buffer_info);
+	CHAR_INFO fill_path;
+	COORD coordDest;
+
+	fill_path.Attributes = WHITE;
+	fill_path.Char.AsciiChar = (char)' ';
+
+	switch (type) {
+
+	case(SCROLL_DOWN)://Down
+		
+		if (stats_position.Bottom == screen_buffer_info.dwSize.Y) return;
+		coordDest.X = stats_position.Left;
+		coordDest.Y = stats_position.Top + 1;
+		ScrollConsoleScreenBuffer(
+			cout,
+			&stats_position,
+			NULL,
+			coordDest,
+			&fill_path
+		);
+		stats_position.Top++;
+		stats_position.Bottom++;
+		break;
+	case(SCROLL_UP)://Up
+		if (stats_position.Top == 0) return;
+		coordDest.X = stats_position.Left;
+		coordDest.Y = stats_position.Top - 1;
+		ScrollConsoleScreenBuffer(
+			cout,
+			&stats_position,
+			NULL,
+			coordDest,
+			&fill_path
+		);
+		stats_position.Top--;
+		stats_position.Bottom--;
 	}
 }
 
@@ -600,55 +692,54 @@ static void keyboard_handler(KEY_EVENT_RECORD mr) {
 
 static void add_new_action(BYTE type, action_move* mv) {
 	is_exist_field();
-	actions_history.act[actions_history.actions_cnt].action_type = type;
+	actions_history.act[actions_history.cnt].type = type;
 
 	switch (type) {
 
-	case(1): // Move
-		actions_history.act[actions_history.actions_cnt].ac_move = malloc(sizeof(action_move));
-		memcpy(actions_history.act[actions_history.actions_cnt].ac_move, mv, sizeof(action_move));
+	case(ACTION_MOVE):
+		actions_history.act[actions_history.cnt].ac_move = malloc(sizeof(action_move));
+		memcpy(actions_history.act[actions_history.cnt].ac_move, mv, sizeof(action_move));
 		break;
-	case(2)://Deal
-	case(3)://Compact
-		actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field = malloc(sizeof(fieldData));
+	case(ACTION_DEAL):
+	case(ACTION_COMPACT):
+		actions_history.act[actions_history.cnt].ac_deal_com.game_field = malloc(sizeof(fieldData));
 		ui field_bit_size = sizeof(int) * game_field->count_rows * IN_ROW;
 		
-		actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->field = (int**)malloc(sizeof(int*) * game_field->count_rows);
+		actions_history.act[actions_history.cnt].ac_deal_com.game_field->field = (int**)malloc(sizeof(int*) * game_field->count_rows);
 		for (size_t row = 0; row < game_field->count_rows; row++)
 		{
-			actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->field[row] = (int*)malloc(sizeof(int) * IN_ROW);
-			memcpy(actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->field[row], game_field->field[row], IN_ROW * 4);
+			actions_history.act[actions_history.cnt].ac_deal_com.game_field->field[row] = (int*)malloc(sizeof(int) * IN_ROW);
+			memcpy(actions_history.act[actions_history.cnt].ac_deal_com.game_field->field[row], game_field->field[row], IN_ROW * 4);
 		}
-		actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_of_moves = game_field->count_of_moves;
-		actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_of_ocuppied_cells = game_field->count_of_ocuppied_cells;
-		actions_history.act[actions_history.actions_cnt].ac_deal_com.game_field->count_rows = game_field->count_rows;
+		actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_of_moves = game_field->count_of_moves;
+		actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_of_ocuppied_cells = game_field->count_of_ocuppied_cells;
+		actions_history.act[actions_history.cnt].ac_deal_com.game_field->count_rows = game_field->count_rows;
 		break;
 	default:
 		break;
 	}
 
-	actions_history.actions_cnt++;
-	if (actions_history.actions_cnt == actions_history.actions_capacity) {
-		actions_history.act = realloc(actions_history.act, sizeof(action) * actions_history.actions_capacity * 2);
-		actions_history.actions_capacity *= 2;
+	actions_history.cnt++;
+	if (actions_history.cnt == actions_history.capacity) {
+		actions_history.act = realloc(actions_history.act, sizeof(action) * actions_history.capacity * 2);
+		actions_history.capacity *= 2;
 	}
 
 }
 
 static void redraw_stats() {
-	char buf[30];
 	COORD point;
 	DWORD l;
 
-	_stprintf(buf, TEXT("%s %d"), "Remain: ", game_field->count_of_ocuppied_cells);
+	_stprintf(text_buf, TEXT("%s %d"), "Remain: ", game_field->count_of_ocuppied_cells);
 	point.Y = 0;
 	point.X = console_max_x - stats_padding;
-	WriteConsoleOutputCharacter(cout, buf, strlen(buf), point, &l);
+	WriteConsoleOutputCharacter(cout, text_buf, strlen(text_buf), point, &l);
 
 
-	_stprintf(buf, TEXT("%s %d"), "Move: ", game_field->count_of_moves);
+	_stprintf(text_buf, TEXT("%s %d"), "Move: ", game_field->count_of_moves);
 	point.Y = 1;
-	WriteConsoleOutputCharacter(cout, buf, strlen(buf), point, &l);
+	WriteConsoleOutputCharacter(cout, text_buf, strlen(text_buf), point, &l);
 }
 
 static void make_all_field_white() {
