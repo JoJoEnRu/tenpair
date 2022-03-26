@@ -5,7 +5,7 @@
 int main() {
 	init_table();
 	init_console();
-	bot_game();
+	//bot_game();
 	draw_table();
 	game_process();
 	return 0;

@@ -39,6 +39,21 @@ typedef struct moves_s moves;
 
 typedef struct fieldData_s fieldData;
 
+typedef struct available_moves_s {
+
+	struct horizontal {
+		complete_move* arr;
+		ui cnt;
+		ui cap;
+	}horizontal;
+	struct vertical {
+		complete_move* arr;
+		ui cnt;
+		ui cap;
+	}vertical;
+
+}available_moves;
+
 fieldData* game_field;
 
 
@@ -55,4 +70,4 @@ void undo(bool mode);
 
 bool make_turn(complete_move move);
 complete_move to_move(ui row1, ui column1, ui row2, ui column2);
-moves* check_available_moves();
+available_moves* check_available_moves();

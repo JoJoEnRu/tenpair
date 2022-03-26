@@ -10,17 +10,18 @@
 #define ACTION_DEAL	   2
 #define ACTION_COMPACT 3
 
+#define HORIZONTAL_MOVE 1
+#define VERTICAL_MOVE 0
+
 #define SCROLL_UP   2
 #define SCROLL_DOWN 1
 
 #define stats_padding 13
 #define console_max_x 35
 #define console_max_y 35
-#define WHITE FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED
+#define WHITE (FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED)
 
 bool always_hint_mode = 0;
-
-
 
 typedef struct action_move_s {
 	ui fst_val;
@@ -57,7 +58,7 @@ ac_list actions_history;
 
 static COORD last_cursor_position = {0, 0};
 
-static moves* moves_arr = NULL;
+static available_moves moves_arr;
 
 static SMALL_RECT stats_pos;
 
@@ -71,7 +72,7 @@ static bool check_avaiable_cell(move);
 static bool check_avaiable_move(complete_move);
 static bool compare_complete_move(complete_move, complete_move);
 static bool compare_move(move, move);
-static void add_availible_move(moves*, int*, struct complete_moves_s);
+static void add_availible_move(bool, available_moves*, struct complete_moves_s);
 static void scroll_stats(BYTE);
 static void scroll_window(BYTE);
 
@@ -90,7 +91,7 @@ static void is_exist_field() {
 }
 
 static void is_exist_moves() {
-	if (moves_arr == NULL) {
+	if (moves_arr.horizontal.arr == NULL) {
 		is_exist_field();
 		check_available_moves();
 	}
@@ -234,13 +235,30 @@ void mark_available_moves() {
 	point.X = 0;
 	point.Y = 0;
 	always_hint_mode ? make_all_field_white() : 0;
-	for	(ui cursor = 0; cursor < moves_arr->cnt; cursor++){
-		point.Y = moves_arr->arr[cursor].fst.row;
-		point.X = moves_arr->arr[cursor].fst.column *2;
+	complete_move* mv_arr = moves_arr.horizontal.arr;
+	for	(ui cursor = 0; cursor < moves_arr.horizontal.cnt; cursor++){
+		point.Y = mv_arr[cursor].fst.row;
+		point.X = mv_arr[cursor].fst.column *2;
 		FillConsoleOutputAttribute(cout, 2, 1, point, &l);
-		point.Y = moves_arr->arr[cursor].snd.row;
-		point.X = moves_arr->arr[cursor].snd.column*2;
+		point.Y = mv_arr[cursor].snd.row;
+		point.X = mv_arr[cursor].snd.column*2;
 		FillConsoleOutputAttribute(cout, 2, 1, point, &l);
+	}
+	mv_arr = moves_arr.vertical.arr;
+	WORD colors_buffer[1];
+	for (ui cursor = 0; cursor < moves_arr.vertical.cnt; cursor++) {
+		point.Y = mv_arr[cursor].fst.row;
+		point.X = mv_arr[cursor].fst.column * 2;
+		ReadConsoleOutputAttribute(cout, colors_buffer, 1, point, &l);
+		if (colors_buffer[0] == WHITE)
+			colors_buffer[0] = 0;
+		FillConsoleOutputAttribute(cout, colors_buffer[0] | FOREGROUND_RED, 1, point, &l);
+		point.Y = mv_arr[cursor].snd.row;
+		point.X = mv_arr[cursor].snd.column * 2;
+		ReadConsoleOutputAttribute(cout, colors_buffer, 1, point, &l);
+		if (colors_buffer[0] == WHITE)
+			colors_buffer[0] = 0;
+		FillConsoleOutputAttribute(cout, colors_buffer[0] | FOREGROUND_RED, 1, point, &l);
 	}
 }
 
@@ -283,23 +301,32 @@ void game_process() {
 }
 
 void write_available_moves() {
-	for (size_t i = 0; i < moves_arr->cnt; i++)
+	complete_move* mv_arr = moves_arr.horizontal.arr;
+	for (size_t i = 0; i < moves_arr.horizontal.cnt; i++)
 	{
-		printf("%u:%u\n%u:%u\n", moves_arr->arr[i].fst.row, moves_arr->arr[i].fst.column, moves_arr->arr[i].snd.row, moves_arr->arr[i].snd.column);
+		printf("%u:%u\n%u:%u\n", mv_arr[i].fst.row, mv_arr[i].fst.column, mv_arr[i].snd.row, mv_arr[i].snd.column);
+	}
+	mv_arr = moves_arr.vertical.arr;
+	for (size_t i = 0; i < moves_arr.vertical.cnt; i++)
+	{
+		printf("%u:%u\n%u:%u\n", mv_arr[i].fst.row, mv_arr[i].fst.column, mv_arr[i].snd.row, mv_arr[i].snd.column);
 	}
 }
 
-moves* check_available_moves() {
+available_moves* check_available_moves() {
 	is_exist_field();
-	if (moves_arr) {
-		free(moves_arr->arr);
-		free(moves_arr);
-		moves_arr = NULL;
+	if (moves_arr.horizontal.arr) {
+		free(moves_arr.horizontal.arr);
+		free(moves_arr.vertical.arr);
+		moves_arr.horizontal.arr = NULL;
+		moves_arr.vertical.arr = NULL;
 	}
-	moves_arr = malloc(sizeof(moves));
-	int moves_arr_capacity = 10;
-	moves_arr->cnt = 0;
-	moves_arr->arr = malloc(sizeof(struct complete_moves_s) * moves_arr_capacity);
+	moves_arr.horizontal.cnt = 0;
+	moves_arr.vertical.cnt = 0;
+	moves_arr.horizontal.cap = 16;
+	moves_arr.vertical.cap = 16;
+	moves_arr.horizontal.arr = malloc(sizeof(struct complete_moves_s) * 16);
+	moves_arr.vertical.arr = malloc(sizeof(struct complete_moves_s) * 16);
 
 	ui maximum_moves = game_field->count_rows * IN_ROW;
 
@@ -322,7 +349,7 @@ moves* check_available_moves() {
 		{
 			move new_position = { cursor / IN_ROW, cursor % IN_ROW };
 			complete_move full_move = { saved_position, new_position };
-			add_availible_move(moves_arr, &moves_arr_capacity, full_move);
+			add_availible_move(HORIZONTAL_MOVE, &moves_arr, full_move);
 		}
 		cursor--;
 	}
@@ -346,11 +373,11 @@ moves* check_available_moves() {
 		{
 			move new_position = { cursor % game_field->count_rows, cursor / game_field->count_rows };
 			complete_move full_move = { saved_position, new_position };
-			add_availible_move(moves_arr, &moves_arr_capacity, full_move);
+			add_availible_move(VERTICAL_MOVE, &moves_arr, full_move);
 		}
 		cursor--;
 	}
-	return moves_arr;
+	return &moves_arr;
 }
 
 /*
@@ -767,10 +794,18 @@ static void move_all_rows_up(ui start_row) {
 static bool check_avaiable_move(complete_move player_move) {
 	is_exist_field();
 	is_exist_moves();
-	//complete_move reverse_position = { player_move->snd, player_move->fst };
-	for (ui i = 0; i < moves_arr->cnt; i++)
+	complete_move* mv_arr = moves_arr.horizontal.arr;
+	for (ui i = 0; i < moves_arr.horizontal.cnt; i++)
 	{
-		if (compare_complete_move(player_move, (moves_arr->arr[i])))
+		if (compare_complete_move(player_move, (mv_arr[i])))
+		{
+			return 1;
+		}
+	}
+	mv_arr = moves_arr.vertical.arr;
+	for (ui i = 0; i < moves_arr.vertical.cnt; i++)
+	{
+		if (compare_complete_move(player_move, (mv_arr[i])))
 		{
 			return 1;
 		}
@@ -794,10 +829,20 @@ static bool compare_move(move mv1, move mv2) {
 }
 
 static bool check_avaiable_cell(move cell) {
-	for (ui i = 0; i < moves_arr->cnt; i++)
+	complete_move* mv_arr = moves_arr.horizontal.arr;
+	for (ui i = 0; i < moves_arr.horizontal.cnt; i++)
 	{
-		if ((cell.column == moves_arr->arr[i].fst.column && cell.column == moves_arr->arr[i].fst.row) ||
-			(cell.row == moves_arr->arr[i].snd.column && cell.row == moves_arr->arr[i].snd.row))
+		if ((cell.column == mv_arr[i].fst.column && cell.column == mv_arr[i].fst.row) ||
+			(cell.row == mv_arr[i].snd.column && cell.row == mv_arr[i].snd.row))
+		{
+			return 1;
+		}
+	}
+	mv_arr = moves_arr.vertical.arr;
+	for (ui i = 0; i < moves_arr.vertical.cnt; i++)
+	{
+		if ((cell.column == mv_arr[i].fst.column && cell.column == mv_arr[i].fst.row) ||
+			(cell.row == mv_arr[i].snd.column && cell.row == mv_arr[i].snd.row))
 		{
 			return 1;
 		}
@@ -805,10 +850,28 @@ static bool check_avaiable_cell(move cell) {
 	return 0;
 }
 
-static void add_availible_move(moves* mv_list, int* capacity, struct complete_moves_s move) {
-	if (*capacity == mv_list->cnt) {
-		mv_list->arr = realloc(mv_list->arr, (*capacity) * 2 * sizeof(complete_move));
-		(*capacity) *= 2;
+static void add_availible_move(bool type, available_moves* mv_list, struct complete_moves_s move) {
+	switch (type) {
+	case(HORIZONTAL_MOVE):
+		if (mv_list->horizontal.cap == mv_list->horizontal.cnt+1) {
+			mv_list->horizontal.arr = (complete_move*)realloc(mv_list->horizontal.arr, mv_list->horizontal.cap * 2 * sizeof(complete_move));
+			if (mv_list->horizontal.arr == NULL)
+				exit(10);
+			mv_list->horizontal.cap *= 2;
+		}
+		mv_list->horizontal.arr[mv_list->horizontal.cnt] = move;
+		mv_list->horizontal.cnt += 1;
+		break;
+	case(VERTICAL_MOVE):
+		if (mv_list->vertical.cap == mv_list->vertical.cnt+1) {
+			mv_list->vertical.arr = (complete_move*)realloc(mv_list->vertical.arr, mv_list->vertical.cap * 2 * sizeof(complete_move));
+			if (mv_list->vertical.arr == NULL)
+				exit(10);
+			mv_list->vertical.cap *= 2;
+		}
+		mv_list->vertical.arr[mv_list->vertical.cnt] = move;
+		mv_list->vertical.cnt += 1;
+		break;
 	}
-	mv_list->arr[mv_list->cnt++] = move;
+
 }
